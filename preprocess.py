@@ -7,7 +7,7 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 # --- Configurație ---
 INPUT_DIR = "personal test"
-OUTPUT_DIR = "pula"
+OUTPUT_DIR = "unde trebuie"
 TARGET_SIZE = (224, 224)
 
 def ensure_dir(directory_path):
