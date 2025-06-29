@@ -1,4 +1,3 @@
-
 import sqlite3
 
 DB_FILE = "user_data.db"

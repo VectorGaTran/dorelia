@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import random
+from collections import Counter
 import numpy as np
 import torch
 from fastai.vision.all import *
@@ -59,6 +60,8 @@ batch_tfms = [*aug_transforms(mult=1.0,
                                 p_lighting=0.8,
                                 pad_mode='reflection'
                                 ),
+              Brightness(max_lighting=0.3, p=0.75, draw=None, batch=False), # Added Brightness
+              Contrast(max_lighting=0.3, p=0.75, draw=None, batch=False), # Added Contrast
               RandomErasing(p=0.5, sl=0.02, sh=0.4, min_aspect=0.3), # Added RandomErasing
               Normalize.from_stats(*imagenet_stats)
              ]
@@ -96,9 +99,25 @@ callbacks_list = [
 
 print(ARCH)
 
+# Calculate class weights for imbalanced datasets
+# Get the labels from the training set file paths
+image_labels = [p.parent.name for p in dls.train_ds.items]
+class_counts = Counter(image_labels)
+
+# Get the counts in the order of the vocabulary
+ordered_counts = [class_counts[label] for label in dls.vocab]
+
+total_samples = len(dls.train_ds)
+num_classes = len(dls.vocab)
+
+# Calculate inverse frequency weights
+weights = torch.tensor([total_samples / (num_classes * count) if count > 0 else 1 for count in ordered_counts], dtype=torch.float32)
+class_weights_tensor = weights.cuda() if torch.cuda.is_available() else weights
+
 learn = vision_learner(
     dls,
     ARCH,
+    loss_func=CrossEntropyLossFlat(weight=class_weights_tensor),
     metrics=[accuracy, error_rate, partial(top_k_accuracy, k=3)],
     wd=0.1,
     cbs=callbacks_list

@@ -7,9 +7,8 @@ import pathlib
 import os
 
 import torch
-from fastai.vision.all import *
-
-from db_utils import init_db, add_user_db, check_user_db 
+from model_utils import load_learner_and_vocab
+from db_utils import init_db, add_user_db, check_user_db
 from ui_pages import main_app_page, gallery_page, map_favorites_page, thesis_info_page
 
 st.set_page_config(
@@ -19,11 +18,10 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-MODELS_DIR = Path("models")
-DEFAULT_MODEL_NAME = "architectural_style_model_fastai_resnet50_1.pkl"
+from config import MODELS_DIR, DEFAULT_MODEL_NAME
 KNOWN_ARCHITECTURAL_STYLES = []
 
-#Dicționar de text ca aplicația să poată avea mai multe limbi disponibile
+# Dicționar de text ca aplicația să poată avea mai multe limbi disponibile
 TEXT_RO = {
     "app_title": "DORELIA",
     "welcome_message": "Bine ați venit!",
@@ -108,7 +106,6 @@ TEXT_RO = {
     "high_confidence_message": "Încredere ridicată.",
     "period_info_default": "Perioadă Est.: Necunoscută",
     "region_info_default": "Regiune: Necunoscută",
-
     "login_tab": "Autentificare",
     "signup_tab": "Înregistrare Cont Nou",
     "username_label": "Nume Utilizator:",
@@ -129,32 +126,32 @@ TEXT_RO = {
 init_db()
 
 # Inițializează session state pentru autentificare
-if 'username' not in st.session_state:
+if "username" not in st.session_state:
     st.session_state.username = None
 # Verifică dacă utilizatorul este autentificat
-if 'logged_in' not in st.session_state:
+if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
 # Alte inițializări session state
-if 'current_model_path' not in st.session_state:
+if "current_model_path" not in st.session_state:
     st.session_state.current_model_path = None
-if 'learner' not in st.session_state:
+if "learner" not in st.session_state:
     st.session_state.learner = None
-if 'current_pil_image' not in st.session_state:
+if "current_pil_image" not in st.session_state:
     st.session_state.current_pil_image = None
-if 'current_image_bytes_for_display' not in st.session_state:
+if "current_image_bytes_for_display" not in st.session_state:
     st.session_state.current_image_bytes_for_display = None
-if 'current_predictions' not in st.session_state:
+if "current_predictions" not in st.session_state:
     st.session_state.current_predictions = None
-if 'current_filename' not in st.session_state:
+if "current_filename" not in st.session_state:
     st.session_state.current_filename = None
-if 'current_image_id_in_db' not in st.session_state:
+if "current_image_id_in_db" not in st.session_state:
     st.session_state.current_image_id_in_db = None
-if 'feedback_submitted_for_current_image' not in st.session_state:
+if "feedback_submitted_for_current_image" not in st.session_state:
     st.session_state.feedback_submitted_for_current_image = False
-if 'show_suggestion_box' not in st.session_state:
+if "show_suggestion_box" not in st.session_state:
     st.session_state.show_suggestion_box = False
-if 'show_suggestion_box_for' not in st.session_state:
+if "show_suggestion_box_for" not in st.session_state:
     st.session_state.show_suggestion_box_for = None
 
 
@@ -163,40 +160,6 @@ def list_models(models_dir):
         return []
     return [f.name for f in models_dir.glob("*.pkl")]
 
-@st.cache_resource
-def load_fastai_learner_cached(model_path_str):
-    global KNOWN_ARCHITECTURAL_STYLES
-    model_path = Path(model_path_str)
-    print(f"Se încarcă modelul de la: {model_path}")
-    try:
-        if platform.system() == "Windows":
-            original_posix_path = pathlib.PosixPath
-            try:
-                pathlib.PosixPath = pathlib.WindowsPath
-                learn = load_learner(model_path, cpu=True)
-            finally:
-                pathlib.PosixPath = original_posix_path
-        else:
-            learn = load_learner(model_path, cpu=True)
-
-        if hasattr(learn.dls, 'vocab') and learn.dls.vocab:
-            KNOWN_ARCHITECTURAL_STYLES = list(learn.dls.vocab)
-            print(f"Stiluri cunoscute actualizate din model: {KNOWN_ARCHITECTURAL_STYLES}")
-        else:
-            print("Avertisment: Vocabularul modelului (dls.vocab) nu a putut fi accesat.")
-            KNOWN_ARCHITECTURAL_STYLES = ["N/A"] if not KNOWN_ARCHITECTURAL_STYLES else KNOWN_ARCHITECTURAL_STYLES
-
-        print("Model încărcat cu succes.")
-        return learn
-    except FileNotFoundError:
-        st.error(f"EROARE: Fișierul model '{model_path}' nu a fost găsit.")
-        return None
-    except Exception as e:
-        st.error(f"EROARE la încărcarea modelului '{model_path}': {e}")
-        import traceback
-        traceback.print_exc()
-        return None
-
 def show_login_register_forms():
     st.title(TEXT_RO["auth_page_title"])
     login_tab, signup_tab = st.tabs([TEXT_RO["login_tab"], TEXT_RO["signup_tab"]])
@@ -204,7 +167,9 @@ def show_login_register_forms():
     with login_tab:
         with st.form("login_form"):
             login_username = st.text_input(TEXT_RO["username_label"], key="login_uname")
-            login_password = st.text_input(TEXT_RO["password_label"], type="password", key="login_pass")
+            login_password = st.text_input(
+                TEXT_RO["password_label"], type="password", key="login_pass"
+            )
             login_button = st.form_submit_button(TEXT_RO["login_button"])
 
             if login_button:
@@ -224,8 +189,12 @@ def show_login_register_forms():
 
     with signup_tab:
         with st.form("signup_form"):
-            signup_username = st.text_input(TEXT_RO["username_label"], key="signup_uname")
-            signup_password = st.text_input(TEXT_RO["password_label"], type="password", key="signup_pass")
+            signup_username = st.text_input(
+                TEXT_RO["username_label"], key="signup_uname"
+            )
+            signup_password = st.text_input(
+                TEXT_RO["password_label"], type="password", key="signup_pass"
+            )
             signup_button = st.form_submit_button(TEXT_RO["signup_button"])
 
             if signup_button:
@@ -233,12 +202,17 @@ def show_login_register_forms():
                 if success:
                     st.success(TEXT_RO["signup_success"])
                 else:
-                    if "goale" in message: # "Numele de utilizator și parola nu pot fi goale."
-                         st.error(TEXT_RO["signup_failed_format"])
-                    elif "există deja" in message: # "Numele de utilizator există deja."
+                    if (
+                        "goale" in message
+                    ):  # "Numele de utilizator și parola nu pot fi goale."
+                        st.error(TEXT_RO["signup_failed_format"])
+                    elif (
+                        "există deja" in message
+                    ):  # "Numele de utilizator există deja."
                         st.error(TEXT_RO["signup_failed_exists"])
                     else:
                         st.error(TEXT_RO["signup_failed_general"].format(e=message))
+
 
 # --- Main Application Flow ---
 if not st.session_state.logged_in:
@@ -248,13 +222,19 @@ else:
         sidebar_image_path = Path("sidebar_image.jpg")
         if sidebar_image_path.exists():
             sidebar_image = Image.open(sidebar_image_path)
-            sidebar_image.thumbnail((1024, 1024)) 
+            sidebar_image.thumbnail((1024, 1024))
 
             st.sidebar.image(sidebar_image, caption="Exemplu Stil Neoromânesc")
         else:
-            st.sidebar.image("https://https://upload.wikimedia.org/wikipedia/commons/e/e7/Castelul_Cantacuzino_02.jpg", caption="Exemplu Stil Neoromânesc\n (Castelul Cantacuzino, Bușteni)")
-    except Exception: # În cazul în care eșuează imaginea locală
-        st.sidebar.image("https://https://upload.wikimedia.org/wikipedia/commons/e/e7/Castelul_Cantacuzino_02.jpg", caption="Exemplu Stil Neoromânesc\n (Castelul Cantacuzino, Bușteni)")
+            st.sidebar.image(
+                "https://https://upload.wikimedia.org/wikipedia/commons/e/e7/Castelul_Cantacuzino_02.jpg",
+                caption="Exemplu Stil Neoromânesc\n (Castelul Cantacuzino, Bușteni)",
+            )
+    except Exception:  # În cazul în care eșuează imaginea locală
+        st.sidebar.image(
+            "https://https://upload.wikimedia.org/wikipedia/commons/e/e7/Castelul_Cantacuzino_02.jpg",
+            caption="Exemplu Stil Neoromânesc\n (Castelul Cantacuzino, Bușteni)",
+        )
 
     st.sidebar.header(TEXT_RO["sidebar_navigation_header"])
 
@@ -263,34 +243,60 @@ else:
         st.sidebar.error(f"Niciun model .pkl găsit în directorul '{MODELS_DIR}'.")
         st.session_state.learner = None
     else:
-        default_model_file_sb = DEFAULT_MODEL_NAME if DEFAULT_MODEL_NAME in available_models_list else available_models_list[0]
-        current_selected_model_name_sb = Path(st.session_state.current_model_path).name if st.session_state.current_model_path and Path(st.session_state.current_model_path).name in available_models_list else default_model_file_sb
-        
+        default_model_file_sb = (
+            DEFAULT_MODEL_NAME
+            if DEFAULT_MODEL_NAME in available_models_list
+            else available_models_list[0]
+        )
+        current_selected_model_name_sb = (
+            Path(st.session_state.current_model_path).name
+            if st.session_state.current_model_path
+            and Path(st.session_state.current_model_path).name in available_models_list
+            else default_model_file_sb
+        )
+
         try:
             idx_sb = available_models_list.index(current_selected_model_name_sb)
         except ValueError:
-            idx_sb = available_models_list.index(default_model_file_sb) if default_model_file_sb in available_models_list else 0
-            st.session_state.current_model_path = str(MODELS_DIR / available_models_list[idx_sb])
+            idx_sb = (
+                available_models_list.index(default_model_file_sb)
+                if default_model_file_sb in available_models_list
+                else 0
+            )
+            st.session_state.current_model_path = str(
+                MODELS_DIR / available_models_list[idx_sb]
+            )
 
         selected_model_name_sb = st.sidebar.selectbox(
             "Selectați Modelul Antrenat (.pkl):",
             options=available_models_list,
             index=idx_sb,
-            key="model_selector_app"
+            key="model_selector_app",
         )
 
         new_model_path_sb = str(MODELS_DIR / selected_model_name_sb)
-        if new_model_path_sb != st.session_state.current_model_path or st.session_state.learner is None:
+        if (
+            new_model_path_sb != st.session_state.current_model_path
+            or st.session_state.learner is None
+        ):
             with st.spinner(f"Se încarcă modelul {selected_model_name_sb}..."):
                 st.session_state.current_model_path = new_model_path_sb
-                st.session_state.learner = load_fastai_learner_cached(st.session_state.current_model_path)
+                st.session_state.learner, KNOWN_ARCHITECTURAL_STYLES = load_learner_and_vocab(
+                    st.session_state.current_model_path
+                )
                 if st.session_state.learner is None:
-                    st.sidebar.error(f"Nu s-a putut încărca modelul {selected_model_name_sb}.")
-                    KNOWN_ARCHITECTURAL_STYLES = ["N/A"]
-    
+                    st.sidebar.error(
+                        f"Nu s-a putut încărca modelul {selected_model_name_sb}."
+                    )
+
     # Trimite st.session_state direct către pagini; acestea vor accesa st.session_state.username
     page_options_map = {
-        TEXT_RO["analyze_button"]: lambda: main_app_page(st.session_state, st.session_state.learner, TEXT_RO, list(KNOWN_ARCHITECTURAL_STYLES)),
+        TEXT_RO["analyze_button"]: lambda: main_app_page(
+            st.session_state,
+            st.session_state.learner,
+            TEXT_RO,
+            list(KNOWN_ARCHITECTURAL_STYLES),
+        ),
         TEXT_RO["gallery_title"]: lambda: gallery_page(st.session_state, TEXT_RO),
         TEXT_RO["map_title"]: lambda: map_favorites_page(st.session_state, TEXT_RO),
         TEXT_RO["about_title"]: lambda: thesis_info_page(TEXT_RO),
@@ -299,7 +305,7 @@ else:
     selected_page_title_nav = st.sidebar.radio(
         TEXT_RO["sidebar_goto_prompt"],
         options=list(page_options_map.keys()),
-        key="navigation_radio_app"
+        key="navigation_radio_app",
     )
 
     st.sidebar.markdown("---")
@@ -329,10 +335,13 @@ else:
     else:
         list(page_options_map.values())[0]()
 
-# Footer 
+# Footer
 st.markdown("---")
-st.markdown(f"<div style='text-align: center; color: gray;'>{TEXT_RO['footer_text']}</div>", unsafe_allow_html=True)
+st.markdown(
+    f"<div style='text-align: center; color: gray;'>{TEXT_RO['footer_text']}</div>",
+    unsafe_allow_html=True,
+)
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     if platform.system() == "Windows":
         multiprocessing.freeze_support()
